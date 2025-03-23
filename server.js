@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const session = require("express-session");
 const admin = require("firebase-admin");
 const querystring = require("querystring");
 const axios = require("axios");
@@ -7,9 +8,18 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
 // Middleware to parse JSON
 app.use(express.json());
+
+// Session Middleware (stores session in memory)
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET, // Secure session secret from .env
+    resave: false, // Prevents resaving session if nothing changed
+    saveUninitialized: false, // Don't create empty sessions
+    cookie: { secure: false, httpOnly: true, maxAge: 3600000 }, // 1-hour session expiry
+  })
+);
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -31,10 +41,10 @@ const db = admin.firestore();
 const userRoutes = require("./src/routes/user");
 app.use("/api/user", userRoutes);
 
-// Add the refresh token function here
+// Refresh token function
 async function refreshAccessToken(refreshToken) {
   const response = await axios.post(
-    "https://accounts.spotify.com/api/token",
+    SPOTIFY_TOKEN_URL,
     querystring.stringify({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
@@ -46,25 +56,22 @@ async function refreshAccessToken(refreshToken) {
   return response.data;
 }
 
-// Test Firebase connection
-app.get("/test-firebase", async (req, res) => {
-  try {
-    const testDoc = db.collection("test").doc("testDoc");
-    await testDoc.set({ message: "Firebase is working!" });
-    const doc = await testDoc.get();
-    res.json(doc.data());
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// Spotify OAuth login (redirect user to Spotify for authentication)
+app.get("/login", (req, res) => {
+  const scope = "user-top-read playlist-modify-public playlist-modify-private";
+  const authUrl = `${SPOTIFY_AUTH_URL}?${querystring.stringify({
+    client_id: clientId,
+    response_type: "code",
+    redirect_uri: redirectUri,
+    scope,
+  })}`;
+  res.redirect(authUrl);
 });
 
-
-// Handle Spotify OAuth Callback
+// Spotify OAuth Callback
 app.get("/callback", async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).json({ error: "Authorization code missing" });
-
-  console.log("Received authorization code:", code);
 
   try {
     const response = await axios.post(
@@ -79,22 +86,25 @@ app.get("/callback", async (req, res) => {
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
-    console.log("Spotify API Response:", response.data);
-
     const { access_token, refresh_token } = response.data;
-    res.json({ access_token, refresh_token });
+
+    // Store tokens in session
+    req.session.access_token = access_token;
+    req.session.refresh_token = refresh_token;
+
+    res.json({ message: "Logged in successfully", access_token, refresh_token });
   } catch (error) {
     console.error("Error exchanging code for token:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to retrieve access token" });
   }
 });
 
-
+// Get user's top tracks (requires session)
 app.get("/top-tracks", async (req, res) => {
-  const { access_token } = req.query;
+  const access_token = req.session.access_token;
 
   if (!access_token) {
-    return res.status(400).json({ error: "Access token required" });
+    return res.status(401).json({ error: "User not authenticated. Please log in again." });
   }
 
   try {
@@ -102,12 +112,11 @@ app.get("/top-tracks", async (req, res) => {
       headers: { Authorization: `Bearer ${access_token}` },
     });
 
-    // Extract only the needed data
     const simplifiedTracks = response.data.items.map((track) => ({
       name: track.name,
       artist: track.artists.map((artist) => artist.name).join(", "),
       album: track.album.name,
-      spotify_url: track.external_urls.spotify, // Link to song on Spotify
+      spotify_url: track.external_urls.spotify,
     }));
 
     res.json(simplifiedTracks);
@@ -117,26 +126,34 @@ app.get("/top-tracks", async (req, res) => {
   }
 });
 
-//test for not
-console.log("SPOTIFY_CLIENT_ID:", process.env.SPOTIFY_CLIENT_ID);
-console.log("SPOTIFY_CLIENT_SECRET:", process.env.SPOTIFY_CLIENT_SECRET);
-console.log("SPOTIFY_REDIRECT_URI:", process.env.SPOTIFY_REDIRECT_URI);
-
-// Add this after your other routes
+// Refresh token route
 app.post("/refresh-token", async (req, res) => {
-  const { refresh_token } = req.body;
-  
+  const refresh_token = req.session.refresh_token;
+
   if (!refresh_token) {
-    return res.status(400).json({ error: "Refresh token is required" });
+    return res.status(401).json({ error: "No refresh token found. Please log in again." });
   }
 
   try {
     const data = await refreshAccessToken(refresh_token);
+    
+    // Update session with new access token
+    req.session.access_token = data.access_token;
     res.json(data);
   } catch (error) {
     console.error("Error refreshing token:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to refresh token" });
   }
+});
+
+// Logout route (clears session)
+app.get("/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: "Failed to log out" });
+    }
+    res.json({ message: "Logged out successfully" });
+  });
 });
 
 // Start server
