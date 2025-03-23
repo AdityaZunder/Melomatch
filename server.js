@@ -58,7 +58,9 @@ async function refreshAccessToken(refreshToken) {
 
 // Spotify OAuth login (redirect user to Spotify for authentication)
 app.get("/login", (req, res) => {
-  const scope = "user-top-read playlist-modify-public playlist-modify-private";
+  const scope =
+    "user-top-read playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private";
+
   const authUrl = `${SPOTIFY_AUTH_URL}?${querystring.stringify({
     client_id: clientId,
     response_type: "code",
@@ -67,7 +69,6 @@ app.get("/login", (req, res) => {
   })}`;
   res.redirect(authUrl);
 });
-
 // Spotify OAuth Callback
 app.get("/callback", async (req, res) => {
   const { code } = req.query;
@@ -146,7 +147,83 @@ app.post("/refresh-token", async (req, res) => {
   }
 });
 
-// Logout route (clears session)
+// Add the following routes in server.js
+
+// Get user's playlists
+app.get('/playlists', async (req, res) => {
+  try {
+      const accessToken = req.session.access_token; // Ensure the session has an access token
+      if (!accessToken) {
+          return res.status(401).json({ error: "User not authenticated" });
+      }
+
+      const response = await fetch("https://api.spotify.com/v1/me/playlists", {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${accessToken}` },
+      });
+
+      if (!response.ok) {
+          throw new Error(`Spotify API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const playlists = data.items.map(playlist => ({
+          id: playlist.id,
+          name: playlist.name,
+          total_tracks: playlist.tracks.total
+      }));
+
+      res.json({ playlists });
+  } catch (error) {
+      console.error("Error fetching playlists:", error);
+      res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Get tracks from a selected playlist
+
+app.get("/playlist-songs", async (req, res) => {
+  const accessToken = req.session.access_token;
+
+  if (!accessToken) {
+    return res.status(401).json({ error: "Unauthorized: No access token" });
+  }
+
+  try {
+    const playlistId = req.query.playlist_id;
+    if (!playlistId) {
+      return res.status(400).json({ error: "Missing playlist_id parameter" });
+    }
+
+    const response = await fetch(
+      `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Spotify API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Extracting only song names and artist names
+    const simplifiedTracks = data.items.map((item) => ({
+      song: item.track.name,
+      artists: item.track.artists.map((artist) => artist.name),
+    }));
+
+    res.json({ tracks: simplifiedTracks });
+  } catch (error) {
+    console.error("Error fetching playlist songs:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
