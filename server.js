@@ -11,6 +11,14 @@ const PORT = process.env.PORT || 5000;
 // Middleware to parse JSON
 app.use(express.json());
 
+const cors = require("cors");
+
+app.use(cors({
+  origin: "http://localhost:8080", // Allow frontend to access backend
+  credentials: true, // Allow cookies (for session storage)
+}));
+
+
 // Session Middleware (stores session in memory)
 app.use(
   session({
@@ -67,7 +75,8 @@ app.get("/login", (req, res) => {
     redirect_uri: redirectUri,
     scope,
   })}`;
-  res.redirect(authUrl);
+
+  res.redirect(authUrl); // ✅ DIRECT REDIRECT
 });
 // Spotify OAuth Callback
 app.get("/callback", async (req, res) => {
@@ -89,14 +98,14 @@ app.get("/callback", async (req, res) => {
 
     const { access_token, refresh_token } = response.data;
 
-    // Store tokens in session
     req.session.access_token = access_token;
     req.session.refresh_token = refresh_token;
 
-    res.json({ message: "Logged in successfully", access_token, refresh_token });
+    // Redirect to frontend with a success message
+    res.redirect("http://localhost:8080/?success=true");
   } catch (error) {
     console.error("Error exchanging code for token:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to retrieve access token" });
+    res.redirect(`http://localhost:8080/?error=auth_failed`);
   }
 });
 
@@ -114,10 +123,10 @@ app.get("/top-tracks", async (req, res) => {
     });
 
     const simplifiedTracks = response.data.items.map((track) => ({
+      id: track.id,
       name: track.name,
       artist: track.artists.map((artist) => artist.name).join(", "),
-      album: track.album.name,
-      spotify_url: track.external_urls.spotify,
+      albumArt: track.album.images[0]?.url || "", // grab album image
     }));
 
     res.json(simplifiedTracks);
