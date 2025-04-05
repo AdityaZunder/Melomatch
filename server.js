@@ -93,19 +93,27 @@ app.get("/callback", async (req, res) => {
         client_id: clientId,
         client_secret: clientSecret,
       }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }
     );
 
     const { access_token, refresh_token } = response.data;
 
+    // Save tokens to session
     req.session.access_token = access_token;
     req.session.refresh_token = refresh_token;
 
-    // Redirect to frontend with a success message
-    res.redirect("http://localhost:8080/?success=true");
+    console.log("✅ Tokens saved to session:", {
+      access_token: access_token?.slice(0, 10) + "...",
+      refresh_token: refresh_token?.slice(0, 10) + "...",
+    });
+
+    // Redirect to frontend
+    res.redirect("http://localhost:8080/?success=true"); // or use 307 status if needed
   } catch (error) {
-    console.error("Error exchanging code for token:", error.response?.data || error.message);
-    res.redirect(`http://localhost:8080/?error=auth_failed`);
+    console.error("❌ Error exchanging code for token:", error.response?.data || error.message);
+    res.redirect("http://localhost:8080/?error=auth_failed");
   }
 });
 
