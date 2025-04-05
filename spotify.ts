@@ -176,7 +176,9 @@ export const getPlaylistTracks = async (playlistId: string): Promise<Track[]> =>
 // Simulated function to get user's top tracks from Spotify
 export async function getUserTopTracks() {
   try {
-    const res = await fetch('http://localhost:5000/top-tracks');
+    const res = await fetch('http://localhost:5000/top-tracks', {
+      credentials: 'include', // THIS is important to include the session cookie
+    });
     console.log('Top tracks response status:', res.status); // 👈 add this
 
     if (!res.ok) {
