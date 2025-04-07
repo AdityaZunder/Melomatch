@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
 import Header from '@/components/Header';
@@ -21,12 +20,11 @@ import {
 } from '@/services/spotify';
 
 const Index: React.FC = () => {
-  // Image and analysis state
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [moodAnalysis, setMoodAnalysis] = useState<MoodAnalysisResult | null>(null);
-  
-  // Spotify state
+  const [hasAnalyzedImage, setHasAnalyzedImage] = useState(false);
+
   const [isSpotifyLoggedIn, setIsSpotifyLoggedIn] = useState(false);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [topTracks, setTopTracks] = useState<Track[]>([]);
@@ -34,35 +32,29 @@ const Index: React.FC = () => {
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [selectedSource, setSelectedSource] = useState<SpotifySourceOptions | null>(null);
   const [sourceSelected, setSourceSelected] = useState(false);
-  
-  // Playlist state
+
   const [isGeneratingPlaylist, setIsGeneratingPlaylist] = useState(false);
   const [generatedTracks, setGeneratedTracks] = useState<GeneratedTrack[]>([]);
   const [playlistUrl, setPlaylistUrl] = useState<string | null>(null);
 
   const [searchParams] = useSearchParams();
 
-
-  
-  // Handle Spotify login
   const handleSpotifyLogin = () => {
     try {
-      authenticateWithSpotify(); // 🔁 Redirects to backend `/api/login`
+      authenticateWithSpotify();
     } catch (error) {
       console.error("Error authenticating with Spotify:", error);
       toast.error("Failed to connect to Spotify. Please try again.");
     }
   };
-  
-  // 👇 This goes below the handleSpotifyLogin definition (inside your component)
-  React.useEffect(() => {
+
+  useEffect(() => {
     const successParam = searchParams.get("success");
-  
+
     if (successParam === "true") {
       setIsSpotifyLoggedIn(true);
       toast.success("Connected to Spotify!");
-  
-      // Load user's playlists after successful login
+
       const fetchUserPlaylists = async () => {
         try {
           setIsLoadingPlaylists(true);
@@ -75,15 +67,29 @@ const Index: React.FC = () => {
           setIsLoadingPlaylists(false);
         }
       };
-  
+
       fetchUserPlaylists();
     }
   }, [searchParams]);
-  // Handle source selection (top tracks or playlist)
+
+  useEffect(() => {
+    const canGenerate =
+      moodAnalysis &&
+      topTracks.length > 0 &&
+      isSpotifyLoggedIn &&
+      generatedTracks.length === 0 &&
+      !isGeneratingPlaylist &&
+      hasAnalyzedImage; // ✅ only after analysis
+  
+    if (canGenerate) {
+      handleGeneratePlaylist();
+    }
+  }, [moodAnalysis, topTracks, isSpotifyLoggedIn, hasAnalyzedImage]);
+
   const handleSourceSelect = async (options: SpotifySourceOptions) => {
     setSelectedSource(options);
     setIsLoadingTracks(true);
-    
+
     try {
       if (options.sourceType === 'top-tracks') {
         const tracks = await getUserTopTracks();
@@ -102,15 +108,16 @@ const Index: React.FC = () => {
       setIsLoadingTracks(false);
     }
   };
-  
-  // Handle image upload and analysis
+
   const handleImageSelected = async (file: File) => {
     setSelectedImage(file);
     setIsAnalyzing(true);
-    
+    setHasAnalyzedImage(false); // reset first
+  
     try {
       const analysis = await analyzeImage(file);
       setMoodAnalysis(analysis);
+      setHasAnalyzedImage(true); // ✅ set after success
       toast.success("Image analysis complete!");
     } catch (error) {
       console.error('Error analyzing image:', error);
@@ -119,25 +126,22 @@ const Index: React.FC = () => {
       setIsAnalyzing(false);
     }
   };
-  
-  // Handle playlist generation
+
   const handleGeneratePlaylist = async () => {
     if (!moodAnalysis || !isSpotifyLoggedIn || topTracks.length === 0) {
       toast.error("Please complete image analysis and connect to Spotify first.");
       return;
     }
-    
+  
     setIsGeneratingPlaylist(true);
-    
+  
     try {
-      // Generate tracks based on mood and user's selected tracks (limited to 7)
-      const tracks = await generatePlaylist(moodAnalysis, topTracks, 7);
+      const tracks = await generatePlaylist(moodAnalysis, topTracks); // ✅ simplified
       setGeneratedTracks(tracks);
-      
-      // Create a Spotify playlist with the generated tracks
+  
       const playlistLink = await createSpotifyPlaylist(tracks, moodAnalysis.mood);
       setPlaylistUrl(playlistLink);
-      
+  
       toast.success("Your recommendations are ready!");
     } catch (error) {
       console.error('Error generating playlist:', error);
@@ -146,20 +150,15 @@ const Index: React.FC = () => {
       setIsGeneratingPlaylist(false);
     }
   };
-  
-  // Determine which steps to show based on current state
-  const showSpotifyAuth = true; // Always show this first
+
   const showSourceSelection = isSpotifyLoggedIn && !sourceSelected;
-  const showImageUpload = sourceSelected; // Show image upload after selecting source
+  const showImageUpload = sourceSelected;
   const showMoodAnalysis = moodAnalysis !== null;
-  // Only show top tracks after the mood analysis is complete
-  const showTopTracks = sourceSelected && topTracks.length > 0 && moodAnalysis !== null;
-  const showPlaylistGenerator = showTopTracks && moodAnalysis !== null;
-  
+  const showPlaylistGenerator = showMoodAnalysis && topTracks.length > 0;
+
   return (
     <div className="min-h-screen flex flex-col bg-theme-navy">
       <Header />
-      
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-8">
         <div className="text-center mb-12 animate-fade-up">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight">
@@ -171,9 +170,8 @@ const Index: React.FC = () => {
             to match the vibe.
           </p>
         </div>
-        
+
         <div className="space-y-16">
-          {/* Spotify Auth Section - Step 1 */}
           <section>
             <SpotifyAuth 
               onLogin={handleSpotifyLogin}
@@ -183,8 +181,7 @@ const Index: React.FC = () => {
               onSourceSelect={showSourceSelection ? handleSourceSelect : undefined}
             />
           </section>
-          
-          {/* Image Upload Section - Step 2 after Spotify connection */}
+
           {showImageUpload && (
             <section>
               <ImageUpload 
@@ -193,8 +190,7 @@ const Index: React.FC = () => {
               />
             </section>
           )}
-          
-          {/* Mood Analysis Section - After image upload */}
+
           {(showMoodAnalysis || isAnalyzing) && (
             <section>
               <MoodAnalysis 
@@ -203,18 +199,42 @@ const Index: React.FC = () => {
               />
             </section>
           )}
-          
-          {/* Top Tracks Section - Only show after mood analysis */}
-          {(showTopTracks || (isLoadingTracks && moodAnalysis !== null)) && (
-            <section>
-              <TopTracks 
-                tracks={topTracks}
-                isLoading={isLoadingTracks}
-              />
-            </section>
-          )}
-          
-          {/* Playlist Generator Section - Final step */}
+
+       {/* Recommended Tracks Section - Only show after mood analysis is done */}
+{moodAnalysis && (
+  <section>
+    {isGeneratingPlaylist ? (
+      // ✨ Shimmer track-style loading with controlled width
+      <div className="space-y-4 animate-pulse">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="flex items-center space-x-4 bg-muted p-4 rounded-xl shadow max-w-xl mx-auto"
+          >
+            <div className="w-16 h-16 bg-gray-300 rounded-lg" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 bg-gray-300 rounded w-3/4" />
+              <div className="h-4 bg-gray-300 rounded w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : generatedTracks.length > 0 ? (
+      // ✅ Show tracks when available
+      <TopTracks 
+        tracks={generatedTracks}
+        isLoading={false}
+      />
+    ) : (
+      // ❌ Fallback message
+      <div className="text-center text-red-500 text-lg font-medium mt-4">
+        Failed to generate recommendations. Please try again.
+      </div>
+    )}
+  </section>
+)}    
+
+
           {(showPlaylistGenerator || isGeneratingPlaylist) && (
             <section>
               <PlaylistGenerator 
@@ -227,7 +247,6 @@ const Index: React.FC = () => {
           )}
         </div>
       </main>
-      
       <Footer />
     </div>
   );

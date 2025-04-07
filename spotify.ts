@@ -94,15 +94,19 @@ export const generatePlaylist = async (
   userTracks: Track[]
 ): Promise<GeneratedTrack[]> => {
   try {
+    const requestBody = {
+      mood: moodAnalysis.mood,
+      top_tracks: userTracks, // ✅ renamed to match backend
+    };
+
+    console.log('Sending to Flask backend:', requestBody); // 🔍 log request payload
+
     const response = await fetch('http://127.0.0.1:5001/recommend-songs', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        mood: moodAnalysis.mood,
-        top_tracks: userTracks, // ✅ renamed to match backend
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
