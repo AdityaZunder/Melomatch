@@ -8,15 +8,16 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Middleware to parse JSON
 app.use(express.json());
 
 const cors = require("cors");
-
 app.use(cors({
-  origin: "http://localhost:8080",
+  origin: ["http://localhost:8080", "http://127.0.0.1:5001"], 
   credentials: true,
 }));
 
+// Session Middleware
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
@@ -31,6 +32,8 @@ app.use(
   })
 );
 
+
+
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
@@ -40,17 +43,25 @@ const redirectUri = process.env.SPOTIFY_REDIRECT_URI;
 
 // Firebase initialization
 const serviceAccount = require("./src/config/firebase-key.json");
-
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
-
 const db = admin.firestore();
 
-// Routes
+// Import routes
 const userRoutes = require("./src/routes/user");
 app.use("/api/user", userRoutes);
 
+// 🔥 GET ACCESS TOKEN from session (for Flask or other services)
+app.get("/get-access-token", (req, res) => {
+  const accessToken = req.session.access_token;
+  if (!accessToken) {
+    return res.status(401).json({ error: "Access token not found in session" });
+  }
+  res.json({ accessToken });
+});
+
+// Refresh token function
 async function refreshAccessToken(refreshToken) {
   const response = await axios.post(
     SPOTIFY_TOKEN_URL,
@@ -110,14 +121,28 @@ app.get("/callback", async (req, res) => {
       refresh_token: refresh_token?.slice(0, 10) + "...",
     });
 
-    res.redirect("http://localhost:8080/?success=true");
+    res.send(`
+      <html>
+        <head><title>Redirecting...</title></head>
+        <body>
+          <script>
+            setTimeout(() => {
+              window.location.href = "http://localhost:8080/?success=true";
+            }, 200);
+          </script>
+          <p>Logging you in...</p>
+        </body>
+      </html>
+    `);
+
+    
   } catch (error) {
     console.error("❌ Error exchanging code for token:", error.response?.data || error.message);
     res.redirect("http://localhost:8080/?error=auth_failed");
   }
 });
 
-// Top Tracks
+// Get top tracks
 app.get("/top-tracks", async (req, res) => {
   const access_token = req.session.access_token;
 
@@ -144,7 +169,7 @@ app.get("/top-tracks", async (req, res) => {
   }
 });
 
-// Refresh Token
+// Refresh token
 app.post("/refresh-token", async (req, res) => {
   const refresh_token = req.session.refresh_token;
 
@@ -191,6 +216,7 @@ app.get('/playlists', async (req, res) => {
     }));
 
     console.log("✅ Fetched playlists:", playlists);
+
     res.json(playlists);
   } catch (error) {
     console.error("❌ Error fetching playlists:", error);
@@ -198,7 +224,7 @@ app.get('/playlists', async (req, res) => {
   }
 });
 
-// Playlist Songs
+// Get playlist songs
 app.get("/playlist-songs", async (req, res) => {
   const accessToken = req.session.access_token;
 
@@ -242,30 +268,54 @@ app.get("/playlist-songs", async (req, res) => {
   }
 });
 
-// 🔥 NEW: Proxy route to Flask (for AI recommendations)
-app.post("/api/recommend-songs", async (req, res) => {
-  const access_token = req.session.access_token;
+app.post("/enrich-songs", async (req, res) => {
+  const accessToken = req.session.access_token;
 
-  if (!access_token) {
+  if (!accessToken) {
+    console.log("🚫 No access token in session!");
     return res.status(401).json({ error: "Access token not found in session" });
   }
 
-  const { selected_tracks, image_url } = req.body;
+  const rawSongs = req.body.songs;
+
+  if (!Array.isArray(rawSongs)) {
+    console.log("🚫 Invalid input for songs:", rawSongs);
+    return res.status(400).json({ error: "Invalid song data format" });
+  }
 
   try {
-    const response = await axios.post("http://localhost:5001/recommend-songs", {
-      access_token,
-      selected_tracks,
-      image_url,
-    });
+    const enriched = await Promise.all(
+      rawSongs.map(async (song) => {
+        const query = `${song.name} ${song.artist}`;
+        const response = await axios.get("https://api.spotify.com/v1/search", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          params: {
+            q: query,
+            type: "track",
+            limit: 1,
+          },
+        });
 
-    res.json(response.data);
-  } catch (err) {
-    console.error("❌ Error calling Flask backend:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to get recommendations" });
+        const track = response.data.tracks.items[0];
+        return {
+          name: song.name,
+          artist: song.artist,
+          albumArt: track?.album?.images?.[0]?.url || null,
+          spotifyUri: track?.external_urls?.spotify || null,
+        };
+      })
+    );
+
+    console.log("🎧 Enriched Songs:", enriched);
+    res.json(enriched);
+  } catch (error) {
+    console.error("❌ Error enriching songs:", error?.response?.data || error.message);
+    res.status(500).json({ error: "Failed to enrich songs with Spotify data" });
   }
 });
-
+// Logout
 app.get("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -275,6 +325,7 @@ app.get("/logout", (req, res) => {
   });
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`Melo Match backend running on port ${PORT}`);
 });

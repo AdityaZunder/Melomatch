@@ -96,31 +96,53 @@ export const generatePlaylist = async (
   try {
     const requestBody = {
       mood: moodAnalysis.mood,
-      top_tracks: userTracks, // ✅ renamed to match backend
+      top_tracks: userTracks, // ✅ matches Flask's expected keys
     };
 
-    console.log('Sending to Flask backend:', requestBody); // 🔍 log request payload
+    console.log("Sending to Flask backend:", requestBody);
 
-    const response = await fetch('http://127.0.0.1:5001/recommend-songs', {
-      method: 'POST',
+    // Step 1: Call Flask to get raw recommendations (name + artist)
+    const recommendResponse = await fetch("http://127.0.0.1:5001/recommend-songs", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify(requestBody),
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to generate playlist');
+    if (!recommendResponse.ok) {
+      throw new Error("Failed to generate playlist from AI");
     }
 
-    const data = await response.json();
-    return data as GeneratedTrack[];
+    const rawTracks = await recommendResponse.json(); // should be [{ name, artist }, ...]
+
+    console.log("Raw AI tracks from Flask:", rawTracks);
+
+    // Step 2: Call Express to enrich songs using session-authenticated Spotify API
+    const enrichResponse = await fetch("http://localhost:5000/enrich-songs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include", // important: so Express can read the session cookie
+      body: JSON.stringify({ songs: rawTracks }),
+    });
+
+    if (!enrichResponse.ok) {
+      throw new Error("Failed to enrich songs via Spotify");
+    }
+
+    const enrichedTracks = await enrichResponse.json(); // should be [{ name, artist, image, uri, etc }]
+    console.log("Enriched Spotify tracks:", enrichedTracks);
+
+    return enrichedTracks as GeneratedTrack[];
+
   } catch (error) {
-    console.error('Error generating playlist:', error);
+    console.error("Error generating enriched playlist:", error);
     return [];
   }
 };
-
 // Simulated function to create a Spotify playlist
 export const createSpotifyPlaylist = async (
   tracks: GeneratedTrack[],
