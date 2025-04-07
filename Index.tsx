@@ -5,17 +5,16 @@ import Header from '@/components/Header';
 import ImageUpload from '@/components/ImageUpload';
 import MoodAnalysis, { MoodAnalysisResult } from '@/components/MoodAnalysis';
 import SpotifyAuth, { SpotifySourceOptions } from '@/components/SpotifyAuth';
-import TopTracks, { Track } from '@/components/TopTracks';
 import PlaylistGenerator, { GeneratedTrack } from '@/components/PlaylistGenerator';
 import Footer from '@/components/Footer';
 import { analyzeImage } from '@/services/imageAnalysis';
 import { 
   authenticateWithSpotify,
   getUserTopTracks,
-  generatePlaylist,
   createSpotifyPlaylist,
   getUserPlaylists,
   getPlaylistTracks,
+  generatePlaylist,
   SpotifyPlaylist
 } from '@/services/spotify';
 
@@ -27,7 +26,7 @@ const Index: React.FC = () => {
 
   const [isSpotifyLoggedIn, setIsSpotifyLoggedIn] = useState(false);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
-  const [topTracks, setTopTracks] = useState<Track[]>([]);
+  const [topTracks, setTopTracks] = useState<GeneratedTrack[]>([]);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [selectedSource, setSelectedSource] = useState<SpotifySourceOptions | null>(null);
@@ -79,8 +78,8 @@ const Index: React.FC = () => {
       isSpotifyLoggedIn &&
       generatedTracks.length === 0 &&
       !isGeneratingPlaylist &&
-      hasAnalyzedImage; // ✅ only after analysis
-  
+      hasAnalyzedImage;
+
     if (canGenerate) {
       handleGeneratePlaylist();
     }
@@ -112,12 +111,12 @@ const Index: React.FC = () => {
   const handleImageSelected = async (file: File) => {
     setSelectedImage(file);
     setIsAnalyzing(true);
-    setHasAnalyzedImage(false); // reset first
+    setHasAnalyzedImage(false);
   
     try {
       const analysis = await analyzeImage(file);
       setMoodAnalysis(analysis);
-      setHasAnalyzedImage(true); // ✅ set after success
+      setHasAnalyzedImage(true);
       toast.success("Image analysis complete!");
     } catch (error) {
       console.error('Error analyzing image:', error);
@@ -136,12 +135,12 @@ const Index: React.FC = () => {
     setIsGeneratingPlaylist(true);
   
     try {
-      const tracks = await generatePlaylist(moodAnalysis, topTracks); // ✅ simplified
+      const tracks = await generatePlaylist(moodAnalysis, topTracks);
       setGeneratedTracks(tracks);
-  
+
       const playlistLink = await createSpotifyPlaylist(tracks, moodAnalysis.mood);
       setPlaylistUrl(playlistLink);
-  
+
       toast.success("Your recommendations are ready!");
     } catch (error) {
       console.error('Error generating playlist:', error);
@@ -172,7 +171,7 @@ const Index: React.FC = () => {
         </div>
 
         <div className="space-y-16">
-          <section>
+          <section className="max-w-2xl mx-auto">
             <SpotifyAuth 
               onLogin={handleSpotifyLogin}
               isLoggedIn={isSpotifyLoggedIn}
@@ -183,7 +182,7 @@ const Index: React.FC = () => {
           </section>
 
           {showImageUpload && (
-            <section>
+            <section className="max-w-2xl mx-auto">
               <ImageUpload 
                 onImageSelected={handleImageSelected}
                 isAnalyzing={isAnalyzing}
@@ -192,7 +191,7 @@ const Index: React.FC = () => {
           )}
 
           {(showMoodAnalysis || isAnalyzing) && (
-            <section>
+            <section className="max-w-2xl mx-auto">
               <MoodAnalysis 
                 result={moodAnalysis}
                 isLoading={isAnalyzing}
@@ -200,43 +199,55 @@ const Index: React.FC = () => {
             </section>
           )}
 
-       {/* Recommended Tracks Section - Only show after mood analysis is done */}
-{moodAnalysis && (
-  <section>
-    {isGeneratingPlaylist ? (
-      // ✨ Shimmer track-style loading with controlled width
-      <div className="space-y-4 animate-pulse">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="flex items-center space-x-4 bg-muted p-4 rounded-xl shadow max-w-xl mx-auto"
-          >
-            <div className="w-16 h-16 bg-gray-300 rounded-lg" />
-            <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-300 rounded w-3/4" />
-              <div className="h-4 bg-gray-300 rounded w-1/2" />
-            </div>
-          </div>
-        ))}
-      </div>
-    ) : generatedTracks.length > 0 ? (
-      // ✅ Show tracks when available
-      <TopTracks 
-        tracks={generatedTracks}
-        isLoading={false}
-      />
-    ) : (
-      // ❌ Fallback message
-      <div className="text-center text-red-500 text-lg font-medium mt-4">
-        Failed to generate recommendations. Please try again.
-      </div>
-    )}
-  </section>
-)}    
+          {/* Final Recommendation Display 
+          {moodAnalysis && (
+            <section className="max-w-2xl mx-auto">
+              {isGeneratingPlaylist ? (
+                <div className="space-y-4 animate-pulse">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center space-x-4 bg-muted p-4 rounded-xl shadow"
+                    >
+                      <div className="w-16 h-16 bg-gray-300 rounded-lg" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-gray-300 rounded w-3/4" />
+                        <div className="h-4 bg-gray-300 rounded w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : generatedTracks.length > 0 ? (
+                <div className="grid gap-4">
+                  {generatedTracks.map((track, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center space-x-4 bg-muted p-4 rounded-xl shadow"
+                    >
+                      <img
+                        src={track.albumArt}
+                        alt={track.name}
+                        className="w-16 h-16 rounded-lg"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{track.name}</span>
+                        <span className="text-sm text-muted-foreground">{track.artist}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-red-500 text-lg font-medium mt-4">
+                  Failed to generate recommendations. Please try again.
+                </div>
+              )}
+            </section>
+          )}
 
+          */}
 
           {(showPlaylistGenerator || isGeneratingPlaylist) && (
-            <section>
+            <section className="max-w-2xl mx-auto">
               <PlaylistGenerator 
                 tracks={generatedTracks}
                 isGenerating={isGeneratingPlaylist}

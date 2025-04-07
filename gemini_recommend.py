@@ -13,29 +13,36 @@ def summarize_listening_history(tracks):
     ])
 
 def recommend_songs(image_mood, user_tracks, use_playlist=False):
-    """Generates 7 AI-based song recommendations based on image mood & user music preference."""
+    """Generates 5 AI-based song recommendations based on image mood & user music preference."""
     model = genai.GenerativeModel("gemini-1.5-flash")
 
     listening_history = summarize_listening_history(user_tracks)
 
     prompt = f"""
-    The user's selected music taste is based on these tracks:
-    {listening_history}
+You are a music recommendation engine.
 
-    The uploaded image conveys the following **mood and themes**:
-    {image_mood}
+The user listens to the following songs:
+{listening_history}
 
-    Based on these factors, recommend only **7 new songs** that fit the mood **(60–65%)** while also aligning with their music taste **(35–40%)**.
-    Ensure the recommendations are diverse in genre but maintain a similar emotional tone.
+They uploaded an image with the following mood and themes:
+{image_mood}
 
-    Return the response in this format:
-    1. Song Name - Artist Name
-    2. Song Name - Artist Name
-    ...
-    """
+🎯 Your task:
+- Recommend exactly 5 songs.
+  - 3 songs should already exist in the user's selection.
+  - 2 songs should be new discoveries that match the image mood.
+- Ensure all songs match the mood (75-80%) and align with user taste (20-25%).
+- Vary the genres slightly but keep a consistent mood feel.
+- Do NOT use any markdown, bold text, or special characters.
+- Keep the response clean and minimal:
+Format:
+1. Song Name - Artist
+2. Song Name - Artist
+3. ...
+"""
 
     response = model.generate_content(prompt)
-    return response.text.strip().split("\n") if response else []
+    return response.text.strip().split("\n")[:5] if response else []
 
 
 if __name__ == "__main__":

@@ -90,8 +90,8 @@ def recommend_songs_endpoint():
                 parts = line.split(" - ")
                 if len(parts) >= 2:
                     raw_songs.append({
-                        "name": parts[0].strip(),
-                        "artist": parts[1].strip()
+                        "name": parts[0].strip().replace("**", ""),
+                        "artist": parts[1].strip().replace("**", "")
                     })
 
         print("✅ Returning raw songs to frontend:", raw_songs)
