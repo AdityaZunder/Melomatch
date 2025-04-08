@@ -315,6 +315,82 @@ app.post("/enrich-songs", async (req, res) => {
     res.status(500).json({ error: "Failed to enrich songs with Spotify data" });
   }
 });
+
+app.post("/create-playlist", async (req, res) => {
+  console.log("🎯 POST /create-playlist HIT");
+
+  const accessToken = req.session.access_token;
+
+  if (!accessToken) {
+    return res.status(401).json({ error: "Unauthorized: No access token" });
+  }
+
+  const { tracks, moodName } = req.body;
+
+  if (!Array.isArray(tracks) || typeof moodName !== "string" || moodName.trim() === "") {
+    return res.status(400).json({ error: "Invalid input: 'tracks' (array) and 'moodName' (string) are required" });
+  }
+
+  try {
+    // Step 1: Get user ID
+    const userResponse = await axios.get("https://api.spotify.com/v1/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userId = userResponse.data.id;
+
+    // Step 2: Create new playlist
+    const playlistResponse = await axios.post(
+      `https://api.spotify.com/v1/users/${userId}/playlists`,
+      {
+        name: `MeloMatch – ${moodName}`,
+        description: "Playlist curated by Melo Match based on your vibe and mood.",
+        public: false,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const playlistId = playlistResponse.data.id;
+    const playlistUrl = playlistResponse.data.external_urls.spotify;
+
+    // Step 3: Parse Spotify URIs from full URLs
+    const uris = tracks
+      .map((track) => {
+        const match = track.spotifyUri.match(/track\/([a-zA-Z0-9]+)/);
+        return match ? `spotify:track:${match[1]}` : null;
+      })
+      .filter(Boolean);
+
+    if (uris.length === 0) {
+      return res.status(400).json({ error: "No valid Spotify track URIs found in provided tracks." });
+    }
+
+    // Step 4: Add tracks to playlist
+    await axios.post(
+      `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+      { uris },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log("✅ Playlist created:", playlistUrl);
+    res.json({ playlistUrl });
+
+  } catch (error) {
+    console.error("❌ Error creating playlist:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to create playlist" });
+  }
+});
+
 // Logout
 app.get("/logout", (req, res) => {
   req.session.destroy((err) => {

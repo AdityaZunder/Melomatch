@@ -3,6 +3,7 @@ import { Track } from '@/components/TopTracks';
 import { GeneratedTrack } from '@/components/PlaylistGenerator';
 import { MoodAnalysisResult } from '@/components/MoodAnalysis';
 import axios from "axios";
+import { request } from 'http';
 
 // src/lib/Spotify.ts
 // @/lib/Spotify.ts
@@ -148,13 +149,26 @@ export const createSpotifyPlaylist = async (
   tracks: GeneratedTrack[],
   moodName: string
 ): Promise<string> => {
-  // In a real implementation, this would call the Spotify API to create a playlist
-  return new Promise((resolve) => {
-    // Simulate API call delay
-    setTimeout(() => {
-      // Mock Spotify playlist URL
-      // In a real implementation, this would be the actual URL returned by the Spotify API
-      resolve('https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd');
-    }, 2000); // Simulate 2 second API call
+  const payload = { tracks, moodName };
+
+  console.log("📤 Sending to backend:", payload);
+  const response = await fetch("http://localhost:5000/create-playlist", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      
+    },
+    credentials: "include",
+    body: JSON.stringify({ tracks, moodName }),
   });
+  
+  console.log(JSON.stringify({ tracks, moodName }),)
+
+  const data = await response.json();
+
+  if (!response.ok) throw new Error(data.error || "Failed to create playlist");
+
+  return data.playlistUrl;
 };
+
+
