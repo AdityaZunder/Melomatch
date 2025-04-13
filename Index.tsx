@@ -137,16 +137,30 @@ const Index: React.FC = () => {
     try {
       const tracks = await generatePlaylist(moodAnalysis, topTracks);
       setGeneratedTracks(tracks);
-
-      const playlistLink = await createSpotifyPlaylist(tracks, moodAnalysis.mood);
-      setPlaylistUrl(playlistLink);
-
-      toast.success("Your recommendations are ready!");
+  
+      // 🚫 Intentionally break the flow here
+      throw new Error("Simulated break after generating playlist"); // <- remove later for production
     } catch (error) {
-      console.error('Error generating playlist:', error);
-      toast.error("Failed to generate recommendations. Please try again.");
+      console.error('Stopped after generating playlist:', error);
+      toast.success("Recommendations generated. You can now choose to create the playlist.");
     } finally {
       setIsGeneratingPlaylist(false);
+    }
+  };
+  
+  const handleCreateSpotifyPlaylist = async () => {
+    if (generatedTracks.length === 0 || !moodAnalysis) {
+      toast.error("No tracks available to create playlist.");
+      return;
+    }
+  
+    try {
+      const playlistLink = await createSpotifyPlaylist(generatedTracks, moodAnalysis.mood);
+      setPlaylistUrl(playlistLink);
+      toast.success("Playlist created on Spotify!");
+    } catch (error) {
+      console.error("Error creating Spotify playlist:", error);
+      toast.error("Failed to create playlist. Try again.");
     }
   };
 
@@ -253,6 +267,7 @@ const Index: React.FC = () => {
                 isGenerating={isGeneratingPlaylist}
                 playlistUrl={playlistUrl}
                 onGeneratePlaylist={handleGeneratePlaylist}
+                onCreateSpotifyPlaylist={handleCreateSpotifyPlaylist} // ← Corrected name
               />
             </section>
           )}

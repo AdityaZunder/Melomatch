@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
-const admin = require("firebase-admin");
 const querystring = require("querystring");
 const axios = require("axios");
 
@@ -41,16 +40,8 @@ const clientId = process.env.SPOTIFY_CLIENT_ID;
 const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
 const redirectUri = process.env.SPOTIFY_REDIRECT_URI;
 
-// Firebase initialization
-const serviceAccount = require("./src/config/firebase-key.json");
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-const db = admin.firestore();
 
-// Import routes
-const userRoutes = require("./src/routes/user");
-app.use("/api/user", userRoutes);
+
 
 // 🔥 GET ACCESS TOKEN from session (for Flask or other services)
 app.get("/get-access-token", (req, res) => {
@@ -285,30 +276,70 @@ app.post("/enrich-songs", async (req, res) => {
 
   try {
     const enriched = await Promise.all(
-      rawSongs.map(async (song) => {
-        const query = `${song.name} ${song.artist}`;
-        const response = await axios.get("https://api.spotify.com/v1/search", {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-          params: {
-            q: query,
-            type: "track",
-            limit: 1,
-          },
-        });
+      rawSongs.map(async (song, index) => {
+        // Clean inputs before querying
+      const cleanedName = song.name.replace(/^\d+\.\s*/, "").trim(); // remove "1. " etc
+      const mainArtist = song.artist.split(",")[0].trim(); // only take first artist
 
-        const track = response.data.tracks.items[0];
-        return {
-          name: song.name,
-          artist: song.artist,
-          albumArt: track?.album?.images?.[0]?.url || null,
-          spotifyUri: track?.external_urls?.spotify || null,
-        };
+      const preciseQuery = `track:${cleanedName} artist:${mainArtist}`;
+        console.log(`🔍 [${index + 1}] Searching for: ${preciseQuery}`);
+
+        try {
+          const response = await axios.get("https://api.spotify.com/v1/search", {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            params: {
+              q: preciseQuery,
+              type: "track",
+              limit: 3, // More results for fallback
+            },
+          });
+
+          const items = response.data.tracks.items;
+
+          if (!items.length) {
+            console.warn(`⚠️ [${index + 1}] No results for: ${preciseQuery}`);
+            return {
+              name: song.name,
+              artist: song.artist,
+              albumArt: null,
+              spotifyUri: null,
+            };
+          }
+
+          // Prefer exact match if found
+          const exactMatch = items.find((item) =>
+            item.name.toLowerCase().includes(song.name.toLowerCase()) &&
+            item.artists.some((a) =>
+              song.artist.toLowerCase().includes(a.name.toLowerCase()) ||
+              a.name.toLowerCase().includes(song.artist.toLowerCase())
+            )
+          );
+
+          const track = exactMatch || items[0];
+
+          console.log(`✅ [${index + 1}] Found track: ${track.name} – ${track.artists.map(a => a.name).join(", ")}`);
+
+          return {
+            name: song.name,
+            artist: song.artist,
+            albumArt: track?.album?.images?.[0]?.url || null,
+            spotifyUri: track?.uri || null, // ✅ Proper format: "spotify:track:xyz"
+          };
+        } catch (searchError) {
+          console.error(`❌ [${index + 1}] Spotify search failed for: ${preciseQuery}`, searchError?.response?.data || searchError.message);
+          return {
+            name: song.name,
+            artist: song.artist,
+            albumArt: null,
+            spotifyUri: null,
+          };
+        }
       })
     );
 
-    console.log("🎧 Enriched Songs:", enriched);
+    console.log("🎧 Final Enriched Songs:", enriched);
     res.json(enriched);
   } catch (error) {
     console.error("❌ Error enriching songs:", error?.response?.data || error.message);
@@ -360,15 +391,14 @@ app.post("/create-playlist", async (req, res) => {
 
     // Step 3: Parse Spotify URIs from full URLs
     const uris = tracks
-      .map((track) => {
-        const match = track.spotifyUri.match(/track\/([a-zA-Z0-9]+)/);
-        return match ? `spotify:track:${match[1]}` : null;
-      })
-      .filter(Boolean);
-
-    if (uris.length === 0) {
-      return res.status(400).json({ error: "No valid Spotify track URIs found in provided tracks." });
+  .map((track) => {
+    if (track.spotifyUri.startsWith("spotify:track:")) {
+      return track.spotifyUri;
     }
+    const urlMatch = track.spotifyUri.match(/track\/([a-zA-Z0-9]+)/);
+    return urlMatch ? `spotify:track:${urlMatch[1]}` : null;
+  })
+  .filter(Boolean);
 
     // Step 4: Add tracks to playlist
     await axios.post(
@@ -390,6 +420,7 @@ app.post("/create-playlist", async (req, res) => {
     res.status(500).json({ error: "Failed to create playlist" });
   }
 });
+
 
 // Logout
 app.get("/logout", (req, res) => {

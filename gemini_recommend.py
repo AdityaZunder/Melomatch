@@ -33,12 +33,15 @@ They uploaded an image with the following mood and themes:
   - 2 songs should be new discoveries that match the image mood.
 - Ensure all songs match the mood (75-80%) and align with user taste (20-25%).
 - Vary the genres slightly but keep a consistent mood feel.
-- Do NOT use any markdown, bold text, or special characters.
+- Only follow the format given
+-Let the last two songs reccomended be the new songs and the first the be the songs alreay existing in the playlist.
 - Keep the response clean and minimal:
 Format:
 1. Song Name - Artist
 2. Song Name - Artist
-3. ...
+3. Song Name - Artist
+4. Song Name - Artist
+5. Song Name - Artist
 """
 
     response = model.generate_content(prompt)

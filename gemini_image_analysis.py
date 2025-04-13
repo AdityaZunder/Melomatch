@@ -28,34 +28,25 @@ def analyze_image(image_file):
 
         model = genai.GenerativeModel(
             "gemini-1.5-flash",
-            generation_config={"temperature": 0.3}
+            generation_config={"temperature": 0.6}
         )
 
-        prompt = """Describe the mood, emotion, and themes of this image in a concise but evocative way (max 30 words).
-Start with a 2–3 word mood title (like a theme), followed by a full descriptive sentence."""
+        # First: Get mood title
+        mood_prompt = (
+    "In 2 to 3 words, describe the emotional atmosphere or aesthetic theme of this image. "
+    "Be imaginative—use evocative, creative, or poetic language. Return only the mood title."
+)
+        mood_response = model.generate_content([image, mood_prompt])
+        mood = mood_response.text.strip().capitalize() if mood_response and mood_response.text else "Unknown"
 
-        response = model.generate_content([image, prompt])
-
-        if not response or not response.text:
-            return {
-                "mood": "Unknown",
-                "description": "Could not analyze image."
-            }
-
-        full_text = response.text.strip()
-
-        # Attempt to split into title + description using first period or newline
-        if '.' in full_text:
-            mood, description = full_text.split('.', 1)
-            mood = mood.strip().capitalize()
-            description = description.strip()
-        elif '\n' in full_text:
-            mood, description = full_text.split('\n', 1)
-            mood = mood.strip().capitalize()
-            description = description.strip()
-        else:
-            mood = full_text.strip().capitalize()
-            description = "No detailed description available."
+        # Second: Get full descriptive sentence
+                # Second: Get full descriptive sentence
+        desc_prompt = (
+            "Write a single evocative and creative sentence describing the emotional tone, atmosphere, and aesthetic of this image. "
+            "Be poetic and unique, avoid clichés, and aim to inspire a mood. Keep it between 30-60 words. give me only the description"
+        )
+        desc_response = model.generate_content([image, desc_prompt])
+        description = desc_response.text.strip() if desc_response and desc_response.text else "No detailed description available."
 
         return {
             "mood": mood,
